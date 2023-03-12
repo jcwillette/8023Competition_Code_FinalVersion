@@ -1,5 +1,8 @@
-package frc.robot;
+// Copyright (c) FIRST and other WPILib contributors.
+// Open Source Software; you can modify and/or share it under the terms of
+// the WPILib BSD license file in the root directory of this project.
 
+package frc.robot;
 
 import com.ctre.phoenix.motorcontrol.ControlMode;
 import com.ctre.phoenix.motorcontrol.NeutralMode;
@@ -9,9 +12,10 @@ import com.revrobotics.CANSparkMaxLowLevel;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.CANSparkMax.IdleMode;
 
-import edu.wpi.first.cameraserver.CameraServer;
-import edu.wpi.first.cscore.UsbCamera;
-import edu.wpi.first.math.filter.SlewRateLimiter;
+// import edu.wpi.first.cameraserver.CameraServer;
+// import edu.wpi.first.cscore.UsbCamera;
+// import edu.wpi.first.math.filter.SlewRateLimiter;
+// import edu.wpi.first.networktables.DoubleEntry;
 import edu.wpi.first.wpilibj.ADIS16470_IMU;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
@@ -20,509 +24,367 @@ import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import edu.wpi.first.wpilibj.DigitalInput;
 
+/**
+ * The VM is configured to automatically run this class, and to call the functions corresponding to
+ * each mode, as described in the TimedRobot documentation. If you change the name of this class or
+ * the package after creating this project, you must also update the build.gradle file in the
+ * project.
+ */
 public class Robot extends TimedRobot {
+  /**
+   * This function is run when the robot is first started up and should be used for any
+   * initialization code.
+   */
 
-  // Auto Stuff:
-  private static final String kDefaultAuto = "Nothing Auto";
-  private static final String kDriveForwardAndBalance = "Drive Forward and balance";
-  private static final String kDepositAndDriveForward = "Deposit Cupe And Drive Forward";
-  private static final String kDepositAndBalance = "Deposit Cube and Balance";
-  private static final String kgsdDepositAndBalance = "GSD Deposit and Balance Code";
-  private String m_autoSelected;
-  private final SendableChooser<String> m_chooser = new SendableChooser<>();
-  
-  // Inputs
-  private ADIS16470_IMU gyro = new ADIS16470_IMU();
+   //Auto Selection
+   private static final String kNoAuto = "No Auto";
+   private static final String kBalanceAuto = "Balance";
+   private static final String kMobilityAuto = "Mobility";
+   private String m_autoSelected;
+   private final SendableChooser<String> m_chooser = new SendableChooser<>();
 
+   //Drive Motors
+   private CANSparkMax leftFrontMotor = new CANSparkMax(3, CANSparkMaxLowLevel.MotorType.kBrushless);
+   private CANSparkMax leftBackMotor = new CANSparkMax(4, CANSparkMaxLowLevel.MotorType.kBrushless);
+   private CANSparkMax rightFrontMotor = new CANSparkMax(2, CANSparkMaxLowLevel.MotorType.kBrushless);
+   private CANSparkMax rightBackMotor = new CANSparkMax(1, CANSparkMaxLowLevel.MotorType.kBrushless);
 
-  // variable to keep track of time
-  private double startTime;
+   MotorControllerGroup leftControllerGroup = new MotorControllerGroup(leftFrontMotor, leftBackMotor);
+   MotorControllerGroup rightControllerGroup = new MotorControllerGroup(rightFrontMotor, rightBackMotor);
 
-  // SlewRateLimiter variable:
-  SlewRateLimiter limiter = new SlewRateLimiter(0.5);
+   DifferentialDrive drive = new DifferentialDrive(leftControllerGroup, rightControllerGroup);
 
-  // Outputs
-  private CANSparkMax leftFrontMotor = new CANSparkMax(3, CANSparkMaxLowLevel.MotorType.kBrushless);
-  private CANSparkMax leftBackMotor = new CANSparkMax(4, CANSparkMaxLowLevel.MotorType.kBrushless);
-  private CANSparkMax rightFrontMotor = new CANSparkMax(2, CANSparkMaxLowLevel.MotorType.kBrushless);
-  private CANSparkMax rightBackMotor = new CANSparkMax(1, CANSparkMaxLowLevel.MotorType.kBrushless);
-
-  MotorControllerGroup leftControllerGroup = new MotorControllerGroup(leftFrontMotor, leftBackMotor);
-  MotorControllerGroup rightControllerGroup = new MotorControllerGroup(rightFrontMotor, rightBackMotor);
-
-  DifferentialDrive drive = new DifferentialDrive(leftControllerGroup, rightControllerGroup);
-
-  RelativeEncoder leftEncoder = leftFrontMotor.getEncoder();
-  RelativeEncoder rightEncoder = rightFrontMotor.getEncoder();
-
-  DigitalInput frontLimitSensor = new DigitalInput(8);
-  DigitalInput backLimitSensor = new DigitalInput(9);
-
-  // Intake Motors
+  //Intake Motors
   private WPI_VictorSPX rollerMotor = new WPI_VictorSPX(5);
   private WPI_VictorSPX raisingMotor = new WPI_VictorSPX(6);
 
-  // Unit Conversion
-  // private final double kDriveTick2Feet = 1.0 / 4096 * 6 * Math.PI / 12;
+  //Sensors
+  RelativeEncoder leftEncoder = leftFrontMotor.getEncoder();
+  RelativeEncoder rightEncoder = rightFrontMotor.getEncoder();
 
-  // This should now disblay the number of wheel rotations.
-  public double getAverageEncoderDistance() {
-    return ((Math.abs(leftEncoder.getPosition()) + (rightEncoder.getPosition()) / 2)/8.46);
-  }
+  private ADIS16470_IMU gyro = new ADIS16470_IMU();
 
   // Controllers
   private XboxController driveController = new XboxController(0);
   private XboxController intakeController = new XboxController(1);
 
+  //Constants
+  private final double encoder2inches = 1/8.46; //Encoder to distance conversion factor
+  
+  private final double driveSpeed = 0.90; //driving constants
+  private final double driveTurn = 0.30;
+  private final double slowMode = 0.5;
+
+  private final double armSpeed = 0.60; //operating constants
+  private final double armDeadband = 0.05; 
+  private final double intakeSpeed = -0.7;
+  private final double outtakeSpeed = 1;
+
   @Override
   public void robotInit() {
-    // Auto stuff:
-    m_chooser.setDefaultOption("DoNothing", kDefaultAuto);
-    // m_chooser.addOption("DriveForwardAndBalance", kDriveForwardAndBalance); // don't need this to show on shuffle board.
-    m_chooser.addOption("DepositAndDriveForward", kDepositAndDriveForward);
-    m_chooser.addOption("DepositCubeAndBalance", kDepositAndBalance);
-    m_chooser.addOption("gsdDepositBalance", kgsdDepositAndBalance);
-    SmartDashboard.putData("Auto choices", m_chooser);
 
-    // Camera init:
-    UsbCamera camera = CameraServer.startAutomaticCapture(0);
-    camera.setResolution(640, 480);
-    // camera.setFPS(20);
+    //Auto Selection
+    m_chooser.setDefaultOption("Mobility", kMobilityAuto);
+    m_chooser.addOption("Balance", kBalanceAuto);
+    m_chooser.addOption("No Auto", kNoAuto);
+    SmartDashboard.putData("Auto Selection",m_chooser);
 
+    //All motors to breakmode
+    leftFrontMotor.setIdleMode(IdleMode.kBrake);
+    leftBackMotor.setIdleMode(IdleMode.kBrake);
+    rightFrontMotor.setIdleMode(IdleMode.kBrake);
+    rightBackMotor.setIdleMode(IdleMode.kBrake);
+    raisingMotor.setNeutralMode(NeutralMode.Brake);
+    rollerMotor.setNeutralMode(NeutralMode.Brake);
 
-    rightFrontMotor.restoreFactoryDefaults();
-    rightBackMotor.restoreFactoryDefaults();
-    leftFrontMotor.restoreFactoryDefaults();
-    leftBackMotor.restoreFactoryDefaults();
-
-    // Invertation Settings
+    //Make motors go in correct direction
     rightControllerGroup.setInverted(true);
     leftControllerGroup.setInverted(false);
 
+    //Reset encoders
     leftEncoder.setPosition(0);
     rightEncoder.setPosition(0);
 
+    //calibrate gyro
     gyro.calibrate();
     gyro.reset();
+
   }
 
   @Override
-  public void robotPeriodic() {
-    double leftPosition = leftEncoder.getPosition();
-    SmartDashboard.putNumber("Left Position", leftPosition);
-    SmartDashboard.putNumber("Left encoder value", leftEncoder.getPosition() );
-    SmartDashboard.putNumber("Right encoder value", rightEncoder.getPosition());
-    SmartDashboard.putNumber("left Encoder Velocity", leftEncoder.getVelocity());
-    SmartDashboard.putNumber("right Encoder velocity", rightEncoder.getVelocity());
-    SmartDashboard.putNumber("Average Encoder Distance in wheel rotations", getAverageEncoderDistance());
-    SmartDashboard.putNumber("YComplementaryAngle", gyro.getYComplementaryAngle() * -1);
-    SmartDashboard.putNumber("YAW angle", gyro.getAngle());
-    SmartDashboard.putNumber("Imu Turn Rate", gyro.getRate());
-    String msg = "Message";
-    String ahmed = "Good Luck Kids";
-    SmartDashboard.putString(msg, ahmed);
-  }
+  public void robotPeriodic() {}
 
   @Override
   public void autonomousInit() {
-    // Auto Stuff:
+
+    //All motors to breakmode
+    leftFrontMotor.setIdleMode(IdleMode.kBrake);
+    leftBackMotor.setIdleMode(IdleMode.kBrake);
+    rightFrontMotor.setIdleMode(IdleMode.kBrake);
+    rightBackMotor.setIdleMode(IdleMode.kBrake);
+    raisingMotor.setNeutralMode(NeutralMode.Brake);
+    rollerMotor.setNeutralMode(NeutralMode.Brake);
+
+    //choose auto
     m_autoSelected = m_chooser.getSelected();
-    System.out.println("Auto selected: " + m_autoSelected);
 
-    startTime = Timer.getFPGATimestamp();
+    //Init state
+    machineState = 1;
+    // approach1 = 1
+    // ascent1 = 2
+    // descent = 3
+    // mobilityDrive = 4
+    // approach2 = 5
+    // autoLevel = 6
 
-    leftEncoder.setPosition(0);
+    //Reset gyro
     gyro.reset();
 
-    // Balancing auto booleans inits -- Don't play around with them
-    m_starting = true;
-    m_onRamp = false;
-    m_descending = false;
-    m_onFlat = false;
-    m_ascending = false;
-    m_exitingRamp = false;
-    m_startBalancing = false;
-    m_balancing = false;
+    //Init Values
+    startTime = Timer.getFPGATimestamp();
+
   }
-  
-  // Balancing auto Booleans:
-  private Boolean m_starting;
-  private Boolean m_onRamp;
-  private Boolean m_descending;
-  private Boolean m_onFlat;
-  private Boolean m_ascending;
-  private Boolean m_exitingRamp;
-  private Boolean m_startBalancing;
-  private Boolean m_balancing;
-  private Double m_position;
+
+  //pre-auto declarations
+  public int machineState; //Auto State
+  public double endStateEncoder; //Encoder Position for decent
+  public double startTime; //Timer
+  public double dT; //time difference between now and last loop
+  public double pidError; //Error off setpoint
+  public double errorRate; // rate of change of error
+  double angleSetpoint = 0.00; //Target angle (balanced)
+  double lastError = 0.00; //error from previous loop
+  double lastTime = 0.00; //timestamp from previous loop
+  double errorSum = 0.00; //sum of errors
+  //PID constants
+  final double kP = 0.00;
+  final double kI = 0.00;
+  final double kD = 0.00;
+  final double iZone = 0.00;
+  public double pidSpeed; //speed of motors during autolevel
+
+
+  //AUTO TUNING LEVERS
+
+  //state machine triggers
+  final double ascentTriggerAngle = 5;
+  final double descentTriggerAngle = -5;
+  final double mobilityTriggerAngle = 5;
+  final double mobilityDistance = 5;
+  final double autoLevelTriggerAngle = -5;
+
+  //State Machine Constants
+  final Double ascentSpeed = 0.55;
+  final Double descendSpeed = 0.3;
+
+  //Other Constants
+  final double ejectTime = 2;
+  final Double ejectSpeedAuto = 0.7;
+  final double driveAwayDist = 102;
+  final Double driveAwaySpeed = 0.3;
 
   @Override
   public void autonomousPeriodic() {
-    // Don't play with these values cuz they are gonna affect the balancing auto
-    double leftPosition = leftEncoder.getPosition();
-    double rightPosition = rightEncoder.getPosition();
-    double distance = (Math.abs(leftPosition) + Math.abs(rightPosition)) / 2;
-    double vAngleTest = gyro.getYComplementaryAngle(); // vAngleTes is for YComplementartAngle and I use it for autos that I am testing, I know I could just use vAngle that is in the kDriveForwardAndBalance but I just don't want to miss around with it. 
 
-    // timer related stuff:
-    double time = Timer.getFPGATimestamp();
-    System.out.println(time - startTime);
-    
-    switch (m_autoSelected) {
-      // kDriveForwardAndBalance is the base code
-      case kDriveForwardAndBalance:
-      if(time - startTime < 5){
-        rollerMotor.set(.7);
-       }else{
-        rollerMotor.set(0);
-       }
-      enableIntakeMotors(true);
-       double vAngle = gyro.getYComplementaryAngle(); // vAngle stands for virticle angle AKA YComplementartAngle
+    //check variables
+    Double time = Timer.getFPGATimestamp();
+    Double robotDisplacement = (leftEncoder.getPosition()+rightEncoder.getPosition())/2*encoder2inches;
+    double currentAngle = gyro.getYComplementaryAngle();
 
-        // rio is mounted backward
-        vAngle = vAngle * -1;
+    switch(m_autoSelected){
+      case kNoAuto:
 
-        if (m_starting && vAngle > 5) {
-          m_onRamp = true;
-          m_ascending = true;
-          m_starting = false;
-        }
+        //Do nothing!
 
-        if (m_ascending && vAngle < 0) {
-          m_ascending = false;
-          m_onFlat = true;
-        }
-
-        if (m_onFlat && Math.abs(vAngle) > 5) {
-          m_onFlat = false;
-          m_descending = true;
-        }
-
-        if (m_descending && Math.abs(vAngle) < 2) {
-          m_descending = false;
-          m_onRamp = false;
-          m_exitingRamp = true;
-          m_position = Math.abs(leftPosition);
-        }
-
-        if (m_starting || m_ascending) {
-          drive.tankDrive(0.55, 0.55);
-        }
-
-        if (m_onFlat || m_descending) {
-          drive.tankDrive(0.2, 0.2);
-        }
-
-        if (m_exitingRamp){
-          if (Math.abs(leftPosition) < m_position + 4){
-            drive.tankDrive(0.3, 0.3);
-          }
-          else {
-            m_exitingRamp = false;
-            m_startBalancing = true;
-            //leftEncoder.setPosition(0);
-            m_position = leftPosition - 20;
-          }
-        }
-      
-        if (m_startBalancing) {
-          if (leftPosition > m_position) {
-          //if (Math.abs(vAngle) > 10) {
-            drive.tankDrive(-0.55, -0.55);
-          } else {
-            m_startBalancing = false;
-            m_balancing = true;
-          }
-        }
-
-        if (m_balancing) {
-          if (vAngle > 2) {
-            drive.tankDrive(0.3, 0.3);
-          }
-          if (vAngle < -2) {
-            drive.tankDrive(-0.3, -0.3);
-          }
-        }
         break;
-      case kDepositAndDriveForward:
-       // shoot the cube out then drive forward for 8.5 wheel rotations
-       if(time - startTime < 5){
-        rollerMotor.set(.7);
-       }else{
-        rollerMotor.set(0);
-       }
-        if ((Math.abs(leftPosition)/ 8.46) < 8.5) {
-          drive.tankDrive(0.3, 0.3);
-        } else {
-          drive.tankDrive(0, 0);
-      }
-        break;
-      case kDepositAndBalance:
-          /*
-         * This auto is going to:
-         * 1. eject the cube which takes about 2 seconds,
-         * 2. balance which takes about 10 seconds 
-         */
-        if(time - startTime < 5){
-          rollerMotor.set(.7);
+      case kMobilityAuto:
+        
+        //Eject Cube
+        if(time - startTime < ejectTime){
+          rollerMotor.set(ejectSpeedAuto);
          }else{
           rollerMotor.set(0);
          }
-        // BALANCE 
-        // rio is mounted backward
-        vAngleTest = vAngleTest * -1;
 
-      if (m_starting && vAngleTest > 5) {
-        m_onRamp = true;
-        m_ascending = true;
-        m_starting = false;
-      }
-
-      if (m_ascending && vAngleTest < 0) {
-        m_ascending = false;
-        m_onFlat = true;
-      }
-
-      if (m_onFlat && Math.abs(vAngleTest) > 5) {
-        m_onFlat = false;
-        m_descending = true;
-      }
-
-      if (m_descending && Math.abs(vAngleTest) < 2) {
-        m_descending = false;
-        m_onRamp = false;
-        m_exitingRamp = true;
-        m_position = Math.abs(leftPosition);
-      }
-
-      if (m_starting || m_ascending) {
-        drive.tankDrive(0.55, 0.55);
-      }
-
-      if (m_onFlat || m_descending) {
-        drive.tankDrive(0.2, 0.2);
-      }
-
-      if (m_exitingRamp){
-        if (Math.abs(leftPosition) < m_position + 3){
-          drive.tankDrive(0.3, 0.3);
-        }
-        else {
-          m_exitingRamp = false;
-          m_startBalancing = true;
-          //leftEncoder.setPosition(0);
-          m_position = leftPosition - 20;
-        }
-      }
-    
-      if (m_startBalancing) {
-        if (leftPosition > m_position) {
-        //if (Math.abs(vAngle) > 10) {
-          drive.tankDrive(-0.6, -0.6);
-        } else {
-          m_startBalancing = false;
-          m_balancing = true;
-        }
-      }
-
-      if (m_balancing) {
-        if (vAngleTest > 2) {
-          drive.tankDrive(0.287, 0.287);
-        }
-        if (vAngleTest < -2) {
-          drive.tankDrive(-0.287, -0.287);
-        }
-      }
-        break;
-      case kgsdDepositAndBalance:
-      if(time - startTime < 5){
-        rollerMotor.set(.7);
-       }else{
-        rollerMotor.set(0);
-       }
-        enableIntakeMotors(true);
-        vAngleTest = vAngleTest * -1;
-
-        if (m_starting && vAngleTest > 5) {
-          m_onRamp = true;
-          m_ascending = true;
-          m_starting = false;
-        }
-
-        if (m_ascending && vAngleTest < 0) {
-          m_ascending = false;
-          m_onFlat = true;
-        }
-
-        if (m_onFlat && Math.abs(vAngleTest) > 5) {
-          m_onFlat = false;
-          m_descending = true;
-        }
-
-        if (m_descending && Math.abs(vAngleTest) < 1.5) {
-          m_descending = false;
-          m_onRamp = false;
-          m_exitingRamp = true;
-          m_position = Math.abs(leftPosition);
-        }
-
-        if (m_starting || m_ascending) {
-          drive.tankDrive(0.55, 0.55);
-        }
-
-        if (m_onFlat || m_descending) {
-          drive.tankDrive(0.2, 0.2);
-        }
-
-        if (m_exitingRamp){
-          if (Math.abs(leftPosition) < m_position + 4){
-            drive.tankDrive(0.3, 0.3);
-          }
-          else {
-            m_exitingRamp = false;
-            m_startBalancing = true;
-            //leftEncoder.setPosition(0);
-            m_position = leftPosition - 20;
-          }
-        }
-
-        if (m_startBalancing) {
-          if (leftPosition > m_position) {
-          //if (Math.abs(vAngle) > 10) {
-            drive.tankDrive(-0.6, -0.6);
-          } else {
-            m_startBalancing = false;
-            m_balancing = true;
-          }
-        }
-
-        if (m_balancing) {
-          if (vAngleTest > 4) {
-            drive.tankDrive(0.278, 0.278);
-          }
-          if (vAngleTest < -4) {
-            drive.tankDrive(-0.278, -0.278);
-          }
-        }
+         //Move Forward 102 inches
+         if(time - startTime > ejectTime){
+          if (robotDisplacement < driveAwayDist) {
+              drive.tankDrive(driveAwaySpeed, driveAwaySpeed);
+            } else {
+              drive.tankDrive(0, 0);
+            }
+         }
 
         break;
-      case kDefaultAuto:
-        default:
-        break;
+      case kBalanceAuto:
+        
+         //State Machine
+         switch(machineState){
+          case 1:
+
+            //Eject Cube
+            if(time - startTime < ejectTime){
+              rollerMotor.set(ejectSpeedAuto);
+            }else{
+              rollerMotor.set(0);
+            }
+            
+            //Approach Station
+            if(time - startTime > ejectTime){
+              drive.tankDrive(0.55, 0.55);
+             }
+
+            //Check for pitch up
+            if(currentAngle > ascentTriggerAngle){
+              machineState = machineState+1;
+            }
+
+          break;
+          case 2:
+
+            //Ascend
+            drive.tankDrive(ascentSpeed, ascentSpeed);
+
+            //check for pitch down
+              if(currentAngle<descentTriggerAngle){
+                machineState=machineState+1;
+              }
+
+          break;
+          case 3:
+
+            //Descend
+            drive.tankDrive(descendSpeed, descendSpeed);
+
+            //check for level
+            if(Math.abs(currentAngle)<mobilityTriggerAngle){
+              endStateEncoder = robotDisplacement;
+              machineState=machineState+1;
+            }
+
+          break;
+          case 4:
+
+            //Move Forward to clear community
+            if (robotDisplacement < endStateEncoder + mobilityDistance) {
+                drive.tankDrive(ascentSpeed, ascentSpeed);
+            }else{
+              machineState = machineState+1;
+            }
+
+          break;
+          case 5:
+
+            //Back up onto charging station
+            drive.tankDrive(-ascentSpeed, -ascentSpeed);
+
+            //check for pitch down
+            if(currentAngle<autoLevelTriggerAngle){
+                machineState=machineState+1;
+            }
+
+          break;
+          case 6:
+
+          //Calculate motor speed with PID
+          
+          pidError = angleSetpoint - currentAngle; //distance from target, used for kP term
+          
+          dT=time-lastTime; // Time between loops, used for kD term
+
+          if(Math.abs(pidError)< iZone){  //checks if close enough to use integral
+            errorSum +=pidError*dT; // time integral of errors, used for kI
+          }
+
+          errorRate = (pidError-lastError)/dT; //rate of change of error, used for kD term
+
+          pidSpeed = kP*pidError + kI*errorSum + kD*errorRate;
+
+          //drive to correct error
+          drive.tankDrive(-pidSpeed, -pidSpeed);
+
+          lastError=pidError;
+          lastTime = time;
+
+          break;
+         }
+
+      break;
     }
+
   }
 
   @Override
   public void teleopInit() {
-    enableDrivingMotors(true);
-    enableIntakeMotors(true);
 
-    leftEncoder.setPosition(0);
-    rightEncoder.setPosition(0);
+    //All motors to breakmode
+    leftFrontMotor.setIdleMode(IdleMode.kBrake);
+    leftBackMotor.setIdleMode(IdleMode.kBrake);
+    rightFrontMotor.setIdleMode(IdleMode.kBrake);
+    rightBackMotor.setIdleMode(IdleMode.kBrake);
+    raisingMotor.setNeutralMode(NeutralMode.Brake);
+    rollerMotor.setNeutralMode(NeutralMode.Brake);
+
   }
 
   @Override
   public void teleopPeriodic() {
-    // System.out.println(Math.round(gyro.getAngle()));
-    // drive controls
-    double Speed = -driveController.getRawAxis(1); // for this axis: up is negative, down is positive
-    double turn = -driveController.getRawAxis(4) * 0.3;
-    if(driveController.getBButton()){ // if the B button is pressed the speed is going to be divided in half
-      Speed = Speed * 0.9;
-      Speed = Speed/2;
-      drive.arcadeDrive(Speed, turn);
+
+    //Driver inputs
+    double speed = -driveController.getRawAxis(1)*driveSpeed;
+    double turn = -driveController.getRawAxis(4)*driveTurn;
+
+    //Operator Inputs
+    double armInput = intakeController.getRawAxis(1)*armSpeed;
+
+    //Driver Control
+    if(driveController.getRightBumper()){ //Slow mode conditional
+      drive.arcadeDrive(speed*slowMode, turn);
     }else{
-      Speed = -driveController.getRawAxis(1) * 0.9; // speed is reset to 90%
-      drive.arcadeDrive(limiter.calculate(Speed), turn); // if the B button is not pressed the "input ramping" is going to be on
+      drive.arcadeDrive(speed, turn);
     }
 
-    // intake RaisingMotor Control
-    double raisingPower = intakeController.getRawAxis(1);
-    // deadBand -- just cuz, why not?
-    if (Math.abs(raisingPower) < 0.05) {
-      raisingPower = 0;
-    }
-
-    // going forward
-    if (raisingPower < 0 && !frontLimitSensor.get()) {
-      raisingPower = 0;
-    }
-
-    // going backward
-    if (raisingPower > 0 && !backLimitSensor.get()) {
-      raisingPower = 0;
-    }
-
-    raisingMotor.set(raisingPower * 0.6);
-    if ((raisingPower < 0 && frontLimitSensor.get()) || (raisingPower > 0 && backLimitSensor.get())) {
-    }else{
+    //operator control
+    if(Math.abs(armInput) < armDeadband){  //Arm control
       raisingMotor.set(0);
+    }else{
+      raisingMotor.set(armInput);
     }
 
-    // intake Rollers control
-    double rollersPower = 0;
-    // press Y if you want to pick up an object, and press A if you want to shoot
-    // the object
-    if (intakeController.getYButton() == true) {
-      rollersPower = 1;
-    } else if (intakeController.getAButton() == true) {
-      rollersPower = -0.7;
+    if(intakeController.getYButton()){  //Roller control
+      rollerMotor.set(ControlMode.PercentOutput, intakeSpeed);
+    }else if (intakeController.getAButton()){
+      rollerMotor.set(ControlMode.PercentOutput, outtakeSpeed);
     }
-    // rollersPower = intakeController.getRawAxis(4);
-    rollerMotor.set(ControlMode.PercentOutput, rollersPower);
+
   }
 
   @Override
   public void disabledInit() {
-    enableDrivingMotors(true);
-    enableIntakeMotors(true);
+
+    //All motors to breakmode
+    leftFrontMotor.setIdleMode(IdleMode.kBrake);
+    leftBackMotor.setIdleMode(IdleMode.kBrake);
+    rightFrontMotor.setIdleMode(IdleMode.kBrake);
+    rightBackMotor.setIdleMode(IdleMode.kBrake);
+    raisingMotor.setNeutralMode(NeutralMode.Brake);
+    rollerMotor.setNeutralMode(NeutralMode.Brake);
+
   }
 
   @Override
-  public void disabledPeriodic() {
-  }
-
-  private void enableDrivingMotors(boolean on) {
-    IdleMode dMotormode;
-    if (on) {
-      dMotormode = IdleMode.kBrake;
-    } else {
-      dMotormode = IdleMode.kCoast;
-    }
-    leftFrontMotor.setIdleMode(dMotormode);
-    leftBackMotor.setIdleMode(dMotormode);
-    rightFrontMotor.setIdleMode(dMotormode);
-    rightBackMotor.setIdleMode(dMotormode);
-  }
-
-  private void enableIntakeMotors(boolean on) {
-    NeutralMode iMotorMode;
-    if (on) {
-      iMotorMode = NeutralMode.Brake;
-    } else {
-      iMotorMode = NeutralMode.Coast;
-    }
-
-    raisingMotor.setNeutralMode(iMotorMode);
-    rollerMotor.setNeutralMode(iMotorMode);
-  }
-  // --------------------------
+  public void disabledPeriodic() {}
 
   @Override
-  public void testInit() {
-  }
+  public void testInit() {}
 
   @Override
-  public void testPeriodic() {
-  }
+  public void testPeriodic() {}
 
   @Override
-  public void simulationInit() {
-  }
+  public void simulationInit() {}
 
   @Override
-  public void simulationPeriodic() {
-  }
+  public void simulationPeriodic() {}
 }
